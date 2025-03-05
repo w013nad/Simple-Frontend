@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Streaming Chatbot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #chat-container {
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 20px;
+            height: 500px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+        }
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            word-wrap: break-word; /* Ensure long words don't overflow */
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            margin-left: 20%;
+        }
+        .bot-message {
+            background-color: #f5f5f5;
+            margin-right: 20%;
+        }
+        #input-container {
+            display: flex;
+            gap: 10px;
+        }
+        #user-input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        /* Style for code blocks (optional, but recommended) */
+        pre {
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto; /* Add horizontal scroll for long code lines */
+        }
+        code {
+          font-family: monospace; /* Use a monospace font for code */
+        }
+
+    </style>
+    <!-- Include Marked.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div id="chat-container"></div>
+    <div id="input-container">
+        <input type="text" id="user-input" placeholder="Type your message...">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script>
+        const API_KEY = 'sk-your-api-key-here'; // Replace with your API key
+        const CHAT_ENDPOINT = 'http://127.0.0.1:8080/v1/chat/completions';  // Or your actual endpoint
+        const chatContainer = document.getElementById('chat-container');
+        const userInput = document.getElementById('user-input');
+
+        // Configure Marked.js (optional, but good practice)
+        marked.setOptions({
+          renderer: new marked.Renderer(),
+          highlight: function(code, lang) {  //  Syntax Highlighting (Optional, Requires a Library)
+            if (hljs && lang) { // Check if hljs (Highlight.js) exists and if a language is provided
+                return hljs.highlight(code, { language: lang }).value;
+            }
+            return code;  // Return unhighlighted if hljs is not available
+          },
+          pedantic: false,
+          gfm: true,
+          breaks: true,  // Convert line breaks to <br> tags
+          sanitize: false, // IMPORTANT:  Set to false to allow HTML in the Markdown.  Be *very* careful with user input if you do this!
+          smartLists: true,
+          smartypants: false,
+          xhtml: false
+        });
+
+        // Handle Enter key press
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            appendMessage('user', message);
+            userInput.value = '';
+
+            const botMessageElement = appendMessage('bot', '');
+
+            try {
+                const response = await fetch(CHAT_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: "llama cpp doesnt check",
+                        messages: [{ role: "user", content: message }],
+                        stream: true
+                    })
+                });
+
+                if (!response.ok) {
+                  // Handle HTTP errors (e.g., 404, 500)
+                  throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let partialLine = '';
+                let accumulatedContent = ''; // Store the complete bot response
+
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = (partialLine + chunk).split('\n');
+                    partialLine = lines.pop() || '';
+
+                    for (const line of lines) {
+                        const cleanedLine = line.replace(/^data: /, '');
+                        if (cleanedLine === '[DONE]') break;
+
+                        try {
+                            const parsed = JSON.parse(cleanedLine);
+                            const content = parsed.choices[0].delta.content || '';
+                            accumulatedContent += content;
+                            updateMessage(botMessageElement, accumulatedContent); // Update with the *accumulated* content
+                        } catch (err) {
+                            console.error('Error parsing JSON:', err, cleanedLine);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                updateMessage(botMessageElement, `Error: Unable to get response. ${error.message}`);
+            }
+        }
+
+
+        function appendMessage(role, content) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}-message`;
+            messageDiv.innerHTML = role === 'user' ? content : ''; //  Don't parse user input as Markdown
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;  // Scroll to bottom
+            return messageDiv;
+        }
+
+
+      function updateMessage(element, newContent) {
+            element.innerHTML = marked.parse(newContent); // Use marked.parse() here
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+    </script>
+    <!-- Optional: Include Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/default.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+    <script>hljs.highlightAll();</script>
+</body>
+</html>

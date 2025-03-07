@@ -79,6 +79,9 @@
         const chatContainer = document.getElementById('chat-container');
         const userInput = document.getElementById('user-input');
 
+        // Initialize conversation history
+        let conversationHistory = [];
+
         // Configure Marked.js (optional, but good practice)
         marked.setOptions({
           renderer: new marked.Renderer(),
@@ -111,6 +114,9 @@
             appendMessage('user', message);
             userInput.value = '';
 
+            // Add user message to conversation history
+            conversationHistory.push({ role: "user", content: message });
+
             const botMessageElement = appendMessage('bot', '');
 
             try {
@@ -122,7 +128,7 @@
                     },
                     body: JSON.stringify({
                         model: "llama cpp doesnt check",
-                        messages: [{ role: "user", content: message }],
+                        messages: conversationHistory, // Send the entire conversation history
                         stream: true
                     })
                 });
@@ -160,6 +166,11 @@
                         }
                     }
                 }
+
+                // Add bot's *complete* response to conversation history
+                conversationHistory.push({ role: "assistant", content: accumulatedContent });
+
+
             } catch (error) {
                 console.error('Error:', error);
                 updateMessage(botMessageElement, `Error: Unable to get response. ${error.message}`);
